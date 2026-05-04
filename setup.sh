@@ -20,8 +20,7 @@ read -rp "Project name (e.g. MyApp):          " PROJECT_NAME
 read -rp "Approver name (your first name):     " APPROVER_NAME
 read -rp "Telegram bot token (from @BotFather):" TELEGRAM_BOT_TOKEN
 read -rp "Telegram chat ID (your user ID):     " TELEGRAM_CHAT_ID
-read -rp "Public HTTPS URL for the gate        " \
-         "(ngrok/cloudflare, e.g. https://xyz.ngrok-free.app): " GATE_BASE_URL
+read -rp "Public HTTPS URL for the gate (ngrok/cloudflare, e.g. https://xyz.ngrok-free.app): " GATE_BASE_URL
 read -rp "Gate port [4242]:                    " GATE_PORT
 GATE_PORT="${GATE_PORT:-4242}"
 
@@ -123,7 +122,30 @@ ok "Claude Code runtime: $CLAUDE_RUNTIME"
 
 # ── 7. create Multica agent ──────────────────────────────────────────────────
 say "Creating Multica agent"
-AGENT_INSTRUCTIONS="You are an AI assistant working on the $PROJECT_NAME project. When assigned a task, read the issue title and description carefully and complete the work using your available tools. Follow project conventions in CLAUDE.md if it exists. When done, summarise what you did and what to verify."
+
+# Look for CLAUDE.md up to 3 directories above the script
+CLAUDE_MD_CONTENT=""
+SEARCH_DIR="$(cd "$(dirname "$0")" && pwd)"
+for _ in 1 2 3; do
+  if [[ -f "$SEARCH_DIR/CLAUDE.md" ]]; then
+    CLAUDE_MD_CONTENT=$(cat "$SEARCH_DIR/CLAUDE.md")
+    ok "Found CLAUDE.md at $SEARCH_DIR/CLAUDE.md — injecting into agent instructions"
+    break
+  fi
+  SEARCH_DIR="$(dirname "$SEARCH_DIR")"
+done
+
+if [[ -n "$CLAUDE_MD_CONTENT" ]]; then
+  AGENT_INSTRUCTIONS="You are an AI assistant working on the $PROJECT_NAME project.
+
+When assigned a task, read the issue title and description carefully and complete the work using your available tools. When done, summarise what you did and what to verify. If you have a question, start your comment with '?' and a human will reply.
+
+--- PROJECT INSTRUCTIONS (CLAUDE.md) ---
+$CLAUDE_MD_CONTENT"
+else
+  AGENT_INSTRUCTIONS="You are an AI assistant working on the $PROJECT_NAME project. When assigned a task, read the issue title and description carefully and complete the work using your available tools. Follow project conventions in CLAUDE.md if it exists. When done, summarise what you did and what to verify. If you have a question, start your comment with '?' and a human will reply."
+fi
+
 AGENT_ID=$(multica agent create \
   --name "$PROJECT_NAME AI" \
   --runtime-id "$CLAUDE_RUNTIME" \

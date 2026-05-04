@@ -1,0 +1,18 @@
+{
+  "_comment": "Edit this file to customise risk levels — no code change needed. Restart the gate after editing.",
+  "high": [
+    "risk:design",
+    "risk:schema",
+    "risk:deploy",
+    "risk:migration",
+    "risk:legal-review",
+    "risk:security",
+    "risk:breaking-change"
+  ],
+  "medium": [
+    "risk:content",
+    "risk:copy",
+    "risk:config",
+    "risk:refactor"
+  ]
+}
