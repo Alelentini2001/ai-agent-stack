@@ -1,14 +1,75 @@
 import { Hono } from "hono";
-import type { Context } from "hono";
+import type { Context, Next } from "hono";
+import { getCookie, setCookie } from "hono/cookie";
 import type { Config } from "./config.js";
 import type { MulticaClient } from "./multica-client.js";
 import { verifyMagicToken } from "./notifier.js";
 import { writeAudit } from "./audit.js";
 import { classifyRisk, getRiskLabels } from "./risk.js";
 import { sendApprovalNotification } from "./notifier.js";
+import { webAppHtml, manifestJson } from "./web-app.js";
 
 export function buildServer(config: Config, multica: MulticaClient): Hono {
   const app = new Hono();
+
+  // ── App auth middleware ───────────────────────────────────────────────────
+  const requireAppAuth = async (c: Context, next: Next) => {
+    if (!config.APP_TOKEN) return next();
+    const token =
+      c.req.header("x-app-token") ??
+      getCookie(c, "app_token") ??
+      c.req.query("token");
+    if (token !== config.APP_TOKEN) return c.text("Unauthorized", 401);
+    setCookie(c, "app_token", token, { httpOnly: true, path: "/", maxAge: 60 * 60 * 24 * 30 });
+    return next();
+  };
+
+  // ── iOS PWA ───────────────────────────────────────────────────────────────
+  app.get("/app", requireAppAuth, (c) =>
+    c.html(webAppHtml(config.PROJECT_NAME)));
+
+  app.get("/manifest.json", (c) =>
+    c.body(manifestJson(config.PROJECT_NAME), 200, { "Content-Type": "application/manifest+json" }));
+
+  // ── PWA API proxy (issues + decide) ──────────────────────────────────────
+  app.get("/api/app/issues", requireAppAuth, async (c) => {
+    const status = c.req.query("status") ?? "todo";
+    const url = `${config.MULTICA_HTTP_URL}/api/issues?workspace_id=${config.MULTICA_WORKSPACE_ID}&status=${status}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${config.MULTICA_TOKEN}` } });
+    const data = await res.json();
+    return c.json(data);
+  });
+
+  app.post("/api/app/decide", requireAppAuth, async (c) => {
+    let body: { taskId?: string; decision?: string };
+    try { body = await c.req.json() as { taskId?: string; decision?: string }; }
+    catch { return c.json({ error: "invalid JSON" }, 400); }
+    const { taskId, decision } = body;
+    if (!taskId || (decision !== "approve" && decision !== "reject")) {
+      return c.json({ error: "taskId and decision (approve|reject) required" }, 400);
+    }
+    const auditId = crypto.randomUUID();
+    const ts = new Date().toISOString();
+    try {
+      if (decision === "approve") await multica.claimTask(taskId);
+      else await multica.cancelTask(taskId);
+      const verb = decision === "approve" ? "Approved" : "Rejected";
+      const emoji = decision === "approve" ? "✅" : "❌";
+      await multica.commentOnTask(taskId, `${emoji} ${verb} by ${config.APPROVER_NAME} via web app at ${ts} (audit: ${auditId})`);
+      await writeAudit({ ts, taskId, decision: decision === "approve" ? "approved" : "rejected",
+        actor: config.APPROVER_NAME, ip: c.req.header("x-forwarded-for") ?? "app", auditId });
+      return c.json({ ok: true, decision });
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 502);
+    }
+  });
+
+  app.get("/api/app/status", requireAppAuth, (c) => c.json({
+    gate: "ok",
+    multica: multica.isConnected() ? "ok" : "degraded",
+    uptime: process.uptime(),
+    project: config.PROJECT_NAME,
+  }));
 
   // ── Health ────────────────────────────────────────────────────────────────
   app.get("/healthz", (c) => {

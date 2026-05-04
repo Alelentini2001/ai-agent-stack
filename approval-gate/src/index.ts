@@ -9,6 +9,7 @@ import { buildServer } from "./server.js";
 import { TelegramCommandHandler } from "./telegram-commands.js";
 import { startTokenWatchdog } from "./token-watchdog.js";
 import { startCompletionMonitor } from "./completion-monitor.js";
+import { startIngestionMonitors } from "./ingestion.js";
 
 const config = loadConfig();
 const multica = new MulticaClient(config);
@@ -34,6 +35,7 @@ bot.start();
 
 const watchdogTimer = startTokenWatchdog(config, multica);
 const completionMonitor = startCompletionMonitor(config, multica);
+const ingestion = startIngestionMonitors(config, multica);
 
 const server = buildServer(config, multica);
 const port = config.GATE_PORT;
@@ -46,6 +48,7 @@ async function shutdown(signal: string) {
   bot.stop();
   multica.close();
   completionMonitor.stop();
+  ingestion.stop();
   clearInterval(watchdogTimer);
   process.exit(0);
 }

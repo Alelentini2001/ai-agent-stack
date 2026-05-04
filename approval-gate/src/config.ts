@@ -14,6 +14,10 @@ const schema = z.object({
   MULTICA_AGENT_ID: z.string().uuid(),
   WEBHOOK_SECRET: z.string().optional(),
   PROJECT_NAME: z.string().default("Project"),
+  APP_TOKEN: z.string().optional(),
+  GAZZETTA_RSS_URL: z.string().url().optional(),
+  ANAC_RSS_URL: z.string().url().optional(),
+  APPALTAMI_HEALTH_URL: z.string().url().optional(),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
 });
 
