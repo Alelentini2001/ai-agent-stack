@@ -192,6 +192,35 @@ export class MulticaClient {
     return issue;
   }
 
+  async getIssue(idOrIdentifier: string): Promise<MulticaTask | null> {
+    // If it looks like a UUID, fetch directly; otherwise scan open issues
+    const isUuid = /^[0-9a-f-]{36}$/i.test(idOrIdentifier);
+    if (isUuid) {
+      const url =
+        `${this.config.MULTICA_HTTP_URL}/api/issues/${idOrIdentifier}` +
+        `?workspace_id=${this.config.MULTICA_WORKSPACE_ID}`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${this.config.MULTICA_TOKEN}` } });
+      if (!res.ok) return null;
+      return (await res.json()) as MulticaTask;
+    }
+    // Search by identifier (e.g. "APP-12") across multiple statuses
+    const all = await this.listIssuesByStatus(["todo", "in_progress", "done", "cancelled"]);
+    return all.find((i) => i.identifier === idOrIdentifier) ?? null;
+  }
+
+  async addLabel(issueId: string, labelName: string): Promise<void> {
+    const ids = await this.resolveLabelIds([labelName]);
+    if (!ids.length) throw new Error(`Label "${labelName}" not found in workspace`);
+    await fetch(
+      `${this.config.MULTICA_HTTP_URL}/api/issues/${issueId}/labels/${ids[0]}` +
+        `?workspace_id=${this.config.MULTICA_WORKSPACE_ID}`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${this.config.MULTICA_TOKEN}` },
+      },
+    );
+  }
+
   async listIssuesByStatus(statuses: string[]): Promise<MulticaTask[]> {
     const results: MulticaTask[] = [];
     for (const status of statuses) {

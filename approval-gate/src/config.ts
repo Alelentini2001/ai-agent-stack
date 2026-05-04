@@ -13,6 +13,7 @@ const schema = z.object({
   JWT_SECRET: z.string().min(32),
   MULTICA_AGENT_ID: z.string().uuid(),
   WEBHOOK_SECRET: z.string().optional(),
+  PROJECT_NAME: z.string().default("Project"),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
 });
 

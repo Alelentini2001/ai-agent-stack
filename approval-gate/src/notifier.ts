@@ -52,24 +52,25 @@ export async function sendApprovalNotification(
   const approveUrl = `${config.GATE_BASE_URL}/approve/${approveToken}`;
   const rejectUrl = `${config.GATE_BASE_URL}/reject/${rejectToken}`;
 
-  const lastComment = task.description ?? "(no description)";
-  const persona = task.assignee ?? "unassigned";
+  const description = task.description ?? "(no description)";
   const labelNames = (task.labels ?? []).map((l) => l.name).join(", ") || "none";
   const riskEmoji = riskLevel === "high" ? "🔴" : "🟡";
+  const project = config.PROJECT_NAME;
 
   const text = [
-    `${riskEmoji} <b>[Appaltami][${riskLevel.toUpperCase()}]</b>`,
+    `${riskEmoji} <b>[${escTg(project)}][${riskLevel.toUpperCase()}] Action required</b>`,
     ``,
     `<b>${escTg(task.title)}</b>`,
-    `Assigned to: <code>${escTg(persona)}</code>`,
-    `Labels: <code>${escTg(labelNames)}</code>`,
+    `ID: <code>${task.id.slice(0, 8)}</code> · Labels: <code>${escTg(labelNames)}</code>`,
     ``,
-    `<b>Description:</b>`,
-    escTg(lastComment.slice(0, 400)),
+    escTg(description.slice(0, 400)),
+    description.length > 400 ? `<i>…(truncated)</i>` : ``,
     ``,
-    `Links expire in 24 h and are single-use.`,
-  ].join("\n");
+    `Tap a button below — or use the backup links (single-use, 24 h).`,
+  ].filter((l, i, a) => !(l === "" && a[i + 1] === "")).join("\n");
 
+  // Primary row: callback buttons (approve/reject without leaving Telegram)
+  // Fallback row: URL buttons that open the browser
   const res = await fetch(
     `https://api.telegram.org/bot${config.TELEGRAM_BOT_TOKEN}/sendMessage`,
     {
@@ -80,10 +81,16 @@ export async function sendApprovalNotification(
         text,
         parse_mode: "HTML",
         reply_markup: {
-          inline_keyboard: [[
-            { text: "Approve", url: approveUrl },
-            { text: "Reject", url: rejectUrl },
-          ]],
+          inline_keyboard: [
+            [
+              { text: "✅ Approve", callback_data: `approve:${task.id}` },
+              { text: "❌ Reject",  callback_data: `reject:${task.id}` },
+            ],
+            [
+              { text: "🔗 Approve (browser)", url: approveUrl },
+              { text: "🔗 Reject (browser)",  url: rejectUrl },
+            ],
+          ],
         },
       }),
     },
@@ -117,7 +124,6 @@ export async function verifyMagicToken(
   return payload;
 }
 
-// Telegram HTML escaping (only <, >, & need escaping in HTML parse_mode)
 function escTg(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
